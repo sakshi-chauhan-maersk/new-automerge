@@ -1,1 +1,96 @@
+name: Auto Merge
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.ref == 'branch1' && github.event.pull_request.base.ref == 'dev'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Auto merge PR if author is correct
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            const allowedAuthor = 'aniket-s-maersk';  // Replace with allowed GitHub username
+
+            if (pr.user.login === allowedAuthor) {
+              await github.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                merge_method: 'merge',
+              });
+            } else {
+              console.log('PR not merged: either the branch or author did not match.');
+            }
+
+  merge-br2-to-main:
+    runs-on: ubuntu-latest
+    needs: automerge
+    steps:
+      - name: Checkout branch1
+        uses: actions/checkout@v3
+        with:
+          ref: branch1  # Checkout branch1 first
+
+      - name: Create pull request from branch1 to main
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const baseBranch = 'main';
+            const headBranch = 'branch1';
+
+            const openPR = await github.rest.pulls.create({
+              owner: owner,
+              repo: repo,
+              title: 'Auto PR: Merge branch1 into main',
+              head: headBranch,
+              base: baseBranch,
+              body: 'Automatically generated pull request to merge branch1 into main'
+            });
+            console.log('Pull request created successfully:', openPR.data);
+
+      - name: Auto merge PR from branch1 to main
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const prList = await github.rest.pulls.list({
+              owner: owner,
+              repo: repo,
+              head: `${owner}:${headBranch}`,
+              base: baseBranch,
+              state: 'open'
+            });
+
+            if (prList.data.length > 0) {
+              const pr = prList.data[0];
+              await github.rest.pulls.merge({
+                owner: owner,
+                repo: repo,
+                pull_number: pr.number,
+                merge_method: 'merge'
+              });
+              console.log('Successfully merged branch1 into main.');
+            } else {
+              console.log('No pull request found to merge branch1 into main.');
+            }
 
